@@ -133,10 +133,19 @@ curl -X POST http://localhost:3939/notify \<br>
       }
 
       try {
+        console.log('Registering service worker...');
         swRegistration = await navigator.serviceWorker.register('/sw.js');
+        console.log('Service worker registered:', swRegistration.scope);
+
+        // Wait for the service worker to be ready
+        await navigator.serviceWorker.ready;
+        console.log('Service worker ready');
+
         currentSubscription = await swRegistration.pushManager.getSubscription();
+        console.log('Existing subscription:', currentSubscription ? 'yes' : 'no');
         updateUI();
       } catch (err) {
+        console.error('Init error:', err);
         showStatus('Failed to initialize: ' + err.message, 'error');
       }
     }
@@ -158,23 +167,35 @@ curl -X POST http://localhost:3939/notify \<br>
 
     async function subscribe() {
       try {
+        showStatus('Fetching VAPID key...', 'info');
         const res = await fetch('/vapid-public-key');
         const { publicKey } = await res.json();
+        console.log('Got VAPID key:', publicKey?.substring(0, 20) + '...');
 
+        if (!swRegistration) {
+          throw new Error('Service worker not registered');
+        }
+
+        showStatus('Requesting permission...', 'info');
         const subscription = await swRegistration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey)
         });
+        console.log('Got subscription:', subscription.endpoint);
 
-        await fetch('/subscribe', {
+        showStatus('Saving subscription...', 'info');
+        const subRes = await fetch('/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(subscription)
         });
+        const subResult = await subRes.json();
+        console.log('Subscribe result:', subResult);
 
         currentSubscription = subscription;
         updateUI();
       } catch (err) {
+        console.error('Subscribe error:', err);
         showStatus('Failed to subscribe: ' + err.message, 'error');
       }
     }
