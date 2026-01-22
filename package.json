@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "generate-vapid": "node scripts/generate-vapid.js"
+    "generate-vapid": "node scripts/generate-vapid.js",
+    "release": "node scripts/release.mjs patch",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major"
   },
   "keywords": [
     "webpush",
