@@ -68,9 +68,97 @@
       overflow-x: auto;
     }
     code { color: #d4a574; }
+
+    /* Permission modal styles */
+    .permission-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .permission-modal.visible {
+      display: flex;
+    }
+    .permission-dialog {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 400px;
+      margin: 1rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .permission-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    .permission-dialog h2 {
+      color: #d4a574;
+      margin: 0 0 0.5rem 0;
+      font-size: 1.5rem;
+    }
+    .permission-dialog p {
+      color: #aaa;
+      margin: 0 0 1.5rem 0;
+      line-height: 1.5;
+    }
+    .permission-buttons {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    .permission-buttons button {
+      min-width: 100px;
+    }
+    .btn-secondary {
+      background: #333;
+      color: #aaa;
+    }
+    .btn-secondary:hover {
+      background: #444;
+    }
+    .browser-hint {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      background: #0f0f23;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      color: #888;
+      display: none;
+    }
+    .browser-hint.visible {
+      display: block;
+    }
   </style>
 </head>
 <body>
+  <!-- Two-step permission modal -->
+  <div class="permission-modal" id="permission-modal">
+    <div class="permission-dialog">
+      <div class="permission-icon">&#128276;</div>
+      <h2>Enable Notifications?</h2>
+      <p>Get notified when Claude Code tasks complete, even when this tab is in the background.</p>
+      <div class="permission-buttons">
+        <button class="btn-secondary" id="permission-deny">Not Now</button>
+        <button id="permission-allow">Enable</button>
+      </div>
+      <div class="browser-hint" id="browser-hint">
+        &#9757; Look for a notification prompt in your browser's address bar and click <strong>Allow</strong>
+      </div>
+    </div>
+  </div>
+
   <h1>Claude Notify</h1>
   <p class="subtitle">Push notifications for Claude Code agents and hooks</p>
 
@@ -251,27 +339,62 @@ curl -X POST http://localhost:3939/notify \<br>
       return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
     }
 
-    // Must request permission directly from click handler (user gesture requirement)
-    subscribeBtn.addEventListener('click', async () => {
-      // Request permission IMMEDIATELY in the click handler before any async work
-      if (Notification.permission === 'default') {
-        showStatus('Requesting notification permission...', 'info');
-        try {
-          const result = await Notification.requestPermission();
-          console.log('Permission result:', result);
-          if (result !== 'granted') {
-            showStatus('Notification permission was not granted', 'error');
-            return;
-          }
-        } catch (err) {
-          console.error('Permission request error:', err);
-          showStatus('Failed to request permission: ' + err.message, 'error');
-          return;
-        }
+    // Two-step permission flow
+    const permissionModal = document.getElementById('permission-modal');
+    const browserHint = document.getElementById('browser-hint');
+
+    function showPermissionModal() {
+      permissionModal.classList.add('visible');
+      browserHint.classList.remove('visible');
+    }
+
+    function hidePermissionModal() {
+      permissionModal.classList.remove('visible');
+    }
+
+    // Step 1: Show custom modal when user clicks Enable
+    subscribeBtn.addEventListener('click', () => {
+      if (Notification.permission === 'granted') {
+        // Already have permission, just subscribe
+        subscribe();
+      } else if (Notification.permission === 'denied') {
+        showStatus('Notifications blocked. Please enable in browser settings (click lock icon in address bar).', 'error');
+      } else {
+        // Show our custom modal first
+        showPermissionModal();
       }
-      // Now proceed with subscription
-      subscribe();
     });
+
+    // Step 2: When user clicks Enable in modal, trigger browser prompt
+    document.getElementById('permission-allow').addEventListener('click', async () => {
+      // Show hint about browser prompt
+      browserHint.classList.add('visible');
+
+      try {
+        const result = await Notification.requestPermission();
+        console.log('Permission result:', result);
+
+        hidePermissionModal();
+
+        if (result === 'granted') {
+          subscribe();
+        } else if (result === 'denied') {
+          showStatus('Notifications were blocked. You can enable them in browser settings.', 'error');
+        } else {
+          showStatus('Permission prompt was dismissed. Click Enable to try again.', 'info');
+        }
+      } catch (err) {
+        console.error('Permission error:', err);
+        hidePermissionModal();
+        showStatus('Failed to request permission: ' + err.message, 'error');
+      }
+    });
+
+    document.getElementById('permission-deny').addEventListener('click', () => {
+      hidePermissionModal();
+      showStatus('Notifications disabled. Click Enable when you\'re ready.', 'info');
+    });
+
     unsubscribeBtn.addEventListener('click', unsubscribe);
     document.getElementById('test-btn').addEventListener('click', sendTest);
 
