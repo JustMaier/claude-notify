@@ -13,7 +13,7 @@ I want you to help me set up claude-notify - a WebPush notification service that
 
 2. **Clone and set up the server:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/claude-notify.git <install-path>
+   git clone https://github.com/JustMaier/claude-notify.git <install-path>
    cd <install-path>
    npm install
    ```

@@ -30,7 +30,7 @@ Copy the contents of [SETUP-PROMPT.md](SETUP-PROMPT.md) and paste it to Claude C
 ### 1. Start the server
 
 ```bash
-git clone <repo-url> claude-notify
+git clone https://github.com/JustMaier/claude-notify.git
 cd claude-notify
 npm install
 npm start
