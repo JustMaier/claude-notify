@@ -1,0 +1,15 @@
+{
+  "name": "Claude Notify",
+  "description": "WebPush notification microservice for Claude Code agents and hooks",
+  "setup": [
+    "npm install"
+  ],
+  "commands": {
+    "deploy": "git pull && npm install && pm2 restart claude-notify || pm2 start src/server.js --name claude-notify"
+  },
+  "default": "deploy",
+  "infrastructure": {
+    "subdomain": "notify",
+    "port": 3939
+  }
+}
