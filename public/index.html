@@ -69,92 +69,95 @@
     }
     code { color: #d4a574; }
 
-    /* Permission modal styles */
-    .permission-modal {
+    /* Permission banner styles */
+    .permission-banner {
       display: none;
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
+      background: linear-gradient(135deg, #d4a574 0%, #c4956a 100%);
+      color: #1a1a2e;
+      padding: 1rem;
       z-index: 1000;
-      align-items: center;
-      justify-content: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      animation: slideDown 0.3s ease;
     }
-    .permission-modal.visible {
-      display: flex;
-    }
-    .permission-dialog {
-      background: #16213e;
-      border-radius: 12px;
-      padding: 2rem;
-      max-width: 400px;
-      margin: 1rem;
-      text-align: center;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-      animation: slideUp 0.3s ease;
-    }
-    @keyframes slideUp {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    .permission-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-    }
-    .permission-dialog h2 {
-      color: #d4a574;
-      margin: 0 0 0.5rem 0;
-      font-size: 1.5rem;
-    }
-    .permission-dialog p {
-      color: #aaa;
-      margin: 0 0 1.5rem 0;
-      line-height: 1.5;
-    }
-    .permission-buttons {
-      display: flex;
-      gap: 0.75rem;
-      justify-content: center;
-    }
-    .permission-buttons button {
-      min-width: 100px;
-    }
-    .btn-secondary {
-      background: #333;
-      color: #aaa;
-    }
-    .btn-secondary:hover {
-      background: #444;
-    }
-    .browser-hint {
-      margin-top: 1rem;
-      padding: 0.75rem;
-      background: #0f0f23;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      color: #888;
-      display: none;
-    }
-    .browser-hint.visible {
+    .permission-banner.visible {
       display: block;
+    }
+    @keyframes slideDown {
+      from { transform: translateY(-100%); }
+      to { transform: translateY(0); }
+    }
+    .banner-content {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .banner-icon {
+      font-size: 2rem;
+      flex-shrink: 0;
+    }
+    .banner-text {
+      flex: 1;
+      min-width: 200px;
+    }
+    .banner-text strong {
+      display: block;
+      font-size: 1.1rem;
+      margin-bottom: 0.25rem;
+    }
+    .banner-text span {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    .banner-arrow {
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 15px solid transparent;
+      border-right: 15px solid transparent;
+      border-top: 15px solid #c4956a;
+    }
+    .banner-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .banner-actions button {
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+    }
+    .btn-banner-dismiss {
+      background: rgba(0, 0, 0, 0.2);
+      color: #1a1a2e;
+    }
+    .btn-banner-dismiss:hover {
+      background: rgba(0, 0, 0, 0.3);
+    }
+    body.banner-visible {
+      padding-top: 5rem;
     }
   </style>
 </head>
 <body>
-  <!-- Two-step permission modal -->
-  <div class="permission-modal" id="permission-modal">
-    <div class="permission-dialog">
-      <div class="permission-icon">&#128276;</div>
-      <h2>Enable Notifications?</h2>
-      <p>Get notified when Claude Code tasks complete, even when this tab is in the background.</p>
-      <div class="permission-buttons">
-        <button class="btn-secondary" id="permission-deny">Not Now</button>
-        <button id="permission-allow">Enable</button>
+  <!-- Permission banner -->
+  <div class="permission-banner" id="permission-banner">
+    <div class="banner-content">
+      <div class="banner-icon">&#128276;</div>
+      <div class="banner-text">
+        <strong>Click the bell icon in your address bar</strong>
+        <span>Look for &#128277; near the URL and click "Allow" to enable notifications</span>
       </div>
-      <div class="browser-hint" id="browser-hint">
-        &#9757; Look for a notification prompt in your browser's address bar and click <strong>Allow</strong>
+      <div class="banner-actions">
+        <button class="btn-banner-dismiss" id="banner-dismiss">Dismiss</button>
       </div>
     </div>
   </div>
@@ -339,60 +342,65 @@ curl -X POST http://localhost:3939/notify \<br>
       return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
     }
 
-    // Two-step permission flow
-    const permissionModal = document.getElementById('permission-modal');
-    const browserHint = document.getElementById('browser-hint');
+    // Permission banner flow
+    const permissionBanner = document.getElementById('permission-banner');
+    let permissionCheckInterval = null;
 
-    function showPermissionModal() {
-      permissionModal.classList.add('visible');
-      browserHint.classList.remove('visible');
+    function showBanner() {
+      permissionBanner.classList.add('visible');
+      document.body.classList.add('banner-visible');
+
+      // Start watching for permission changes
+      permissionCheckInterval = setInterval(() => {
+        if (Notification.permission === 'granted') {
+          hideBanner();
+          subscribe();
+        } else if (Notification.permission === 'denied') {
+          hideBanner();
+          showStatus('Notifications blocked. Click the lock icon in address bar → Site settings → Notifications → Allow', 'error');
+        }
+      }, 500);
     }
 
-    function hidePermissionModal() {
-      permissionModal.classList.remove('visible');
+    function hideBanner() {
+      permissionBanner.classList.remove('visible');
+      document.body.classList.remove('banner-visible');
+      if (permissionCheckInterval) {
+        clearInterval(permissionCheckInterval);
+        permissionCheckInterval = null;
+      }
     }
 
-    // Step 1: Show custom modal when user clicks Enable
-    subscribeBtn.addEventListener('click', () => {
+    // When user clicks Enable, show banner and trigger browser prompt
+    subscribeBtn.addEventListener('click', async () => {
       if (Notification.permission === 'granted') {
         // Already have permission, just subscribe
         subscribe();
       } else if (Notification.permission === 'denied') {
-        showStatus('Notifications blocked. Please enable in browser settings (click lock icon in address bar).', 'error');
+        showStatus('Notifications blocked. Click the lock icon in address bar → Site settings → Notifications → Allow', 'error');
       } else {
-        // Show our custom modal first
-        showPermissionModal();
-      }
-    });
+        // Show banner pointing to address bar
+        showBanner();
 
-    // Step 2: When user clicks Enable in modal, trigger browser prompt
-    document.getElementById('permission-allow').addEventListener('click', async () => {
-      // Show hint about browser prompt
-      browserHint.classList.add('visible');
+        // Trigger the browser permission request (shows bell icon in address bar)
+        try {
+          const result = await Notification.requestPermission();
+          console.log('Permission result:', result);
 
-      try {
-        const result = await Notification.requestPermission();
-        console.log('Permission result:', result);
-
-        hidePermissionModal();
-
-        if (result === 'granted') {
-          subscribe();
-        } else if (result === 'denied') {
-          showStatus('Notifications were blocked. You can enable them in browser settings.', 'error');
-        } else {
-          showStatus('Permission prompt was dismissed. Click Enable to try again.', 'info');
+          // Permission resolved - banner will auto-hide via interval check
+          if (result === 'granted') {
+            hideBanner();
+            subscribe();
+          }
+        } catch (err) {
+          console.error('Permission error:', err);
         }
-      } catch (err) {
-        console.error('Permission error:', err);
-        hidePermissionModal();
-        showStatus('Failed to request permission: ' + err.message, 'error');
       }
     });
 
-    document.getElementById('permission-deny').addEventListener('click', () => {
-      hidePermissionModal();
-      showStatus('Notifications disabled. Click Enable when you\'re ready.', 'info');
+    // Dismiss banner manually
+    document.getElementById('banner-dismiss').addEventListener('click', () => {
+      hideBanner();
     });
 
     unsubscribeBtn.addEventListener('click', unsubscribe);
