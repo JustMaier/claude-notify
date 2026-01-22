@@ -181,8 +181,20 @@ curl -X POST http://localhost:3939/notify \<br>
         // Request permission explicitly if not yet granted
         if (Notification.permission === 'default') {
           showStatus('Requesting notification permission...', 'info');
-          const permission = await Notification.requestPermission();
+
+          // Race the permission request against a timeout to detect suppressed prompts
+          const permission = await Promise.race([
+            Notification.requestPermission(),
+            new Promise(resolve => setTimeout(() => resolve('timeout'), 3000))
+          ]);
+
           console.log('Permission result:', permission);
+
+          if (permission === 'timeout' || Notification.permission === 'default') {
+            // Prompt was likely suppressed by browser
+            throw new Error('Permission prompt blocked by browser. Click the tune/lock icon in the address bar → Site settings → Notifications → Allow');
+          }
+
           if (permission !== 'granted') {
             throw new Error('Notification permission not granted');
           }
