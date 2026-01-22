@@ -173,31 +173,9 @@ curl -X POST http://localhost:3939/notify \<br>
 
     async function subscribe() {
       try {
-        // Check notification permission first
-        if (Notification.permission === 'denied') {
-          throw new Error('Notifications blocked. Please enable them in your browser settings for this site.');
-        }
-
-        // Request permission explicitly if not yet granted
-        if (Notification.permission === 'default') {
-          showStatus('Requesting notification permission...', 'info');
-
-          // Race the permission request against a timeout to detect suppressed prompts
-          const permission = await Promise.race([
-            Notification.requestPermission(),
-            new Promise(resolve => setTimeout(() => resolve('timeout'), 3000))
-          ]);
-
-          console.log('Permission result:', permission);
-
-          if (permission === 'timeout' || Notification.permission === 'default') {
-            // Prompt was likely suppressed by browser
-            throw new Error('Permission prompt blocked by browser. Click the tune/lock icon in the address bar → Site settings → Notifications → Allow');
-          }
-
-          if (permission !== 'granted') {
-            throw new Error('Notification permission not granted');
-          }
+        // Permission is already handled in click handler, but double-check
+        if (Notification.permission !== 'granted') {
+          throw new Error('Notification permission not granted. Please allow notifications for this site.');
         }
 
         showStatus('Fetching VAPID key...', 'info');
@@ -273,7 +251,27 @@ curl -X POST http://localhost:3939/notify \<br>
       return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
     }
 
-    subscribeBtn.addEventListener('click', subscribe);
+    // Must request permission directly from click handler (user gesture requirement)
+    subscribeBtn.addEventListener('click', async () => {
+      // Request permission IMMEDIATELY in the click handler before any async work
+      if (Notification.permission === 'default') {
+        showStatus('Requesting notification permission...', 'info');
+        try {
+          const result = await Notification.requestPermission();
+          console.log('Permission result:', result);
+          if (result !== 'granted') {
+            showStatus('Notification permission was not granted', 'error');
+            return;
+          }
+        } catch (err) {
+          console.error('Permission request error:', err);
+          showStatus('Failed to request permission: ' + err.message, 'error');
+          return;
+        }
+      }
+      // Now proceed with subscription
+      subscribe();
+    });
     unsubscribeBtn.addEventListener('click', unsubscribe);
     document.getElementById('test-btn').addEventListener('click', sendTest);
 
