@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "curl -s -X POST http://localhost:3939/notify -H 'Content-Type: application/json' -d '{\"title\":\"Claude\",\"body\":\"Agent stopped\"}' > /dev/null 2>&1 || true"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE '(npm|yarn|pnpm) (run )?(build|test)'; then curl -s -X POST http://localhost:3939/notify -H 'Content-Type: application/json' -d '{\"title\":\"Build/Test Complete\",\"body\":\"Check the results\"}' > /dev/null 2>&1; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

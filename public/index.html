@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Notify</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+    }
+    h1 { color: #d4a574; margin-bottom: 0.5rem; }
+    .subtitle { color: #888; margin-bottom: 2rem; }
+    .card {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    button {
+      background: #d4a574;
+      color: #1a1a2e;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled {
+      background: #444;
+      color: #888;
+      cursor: not-allowed;
+    }
+    .status {
+      padding: 0.75rem;
+      border-radius: 6px;
+      margin-top: 1rem;
+    }
+    .status.success { background: #1e4620; color: #90ee90; }
+    .status.error { background: #4a1c1c; color: #ff9090; }
+    .status.info { background: #1c3a4a; color: #90d0ff; }
+    #test-section { display: none; }
+    input, textarea {
+      width: 100%;
+      padding: 0.5rem;
+      border-radius: 4px;
+      border: 1px solid #333;
+      background: #0f0f23;
+      color: #eee;
+      margin-bottom: 0.5rem;
+    }
+    label { display: block; margin-bottom: 0.25rem; color: #aaa; }
+    .api-info {
+      background: #0f0f23;
+      padding: 1rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+    }
+    code { color: #d4a574; }
+  </style>
+</head>
+<body>
+  <h1>Claude Notify</h1>
+  <p class="subtitle">Push notifications for Claude Code agents and hooks</p>
+
+  <div class="card">
+    <h3>Subscription Status</h3>
+    <div id="status">Checking...</div>
+    <br>
+    <button id="subscribe-btn" disabled>Enable Notifications</button>
+    <button id="unsubscribe-btn" style="display:none; background:#666;">Disable</button>
+  </div>
+
+  <div class="card" id="test-section">
+    <h3>Test Notification</h3>
+    <label>Title</label>
+    <input type="text" id="test-title" value="Test from Claude">
+    <label>Body</label>
+    <textarea id="test-body" rows="2">This is a test notification!</textarea>
+    <br>
+    <button id="test-btn">Send Test</button>
+  </div>
+
+  <div class="card">
+    <h3>API Usage</h3>
+    <p>Send notifications via POST request:</p>
+    <div class="api-info">
+POST /notify<br>
+Content-Type: application/json<br><br>
+{<br>
+&nbsp;&nbsp;"title": "Claude Done",<br>
+&nbsp;&nbsp;"body": "Task completed successfully",<br>
+&nbsp;&nbsp;"url": "/"<br>
+}
+    </div>
+    <br>
+    <p><strong>curl example:</strong></p>
+    <div class="api-info">
+curl -X POST http://localhost:3939/notify \<br>
+&nbsp;&nbsp;-H "Content-Type: application/json" \<br>
+&nbsp;&nbsp;-d '{"title":"Claude","body":"Done!"}'
+    </div>
+  </div>
+
+  <script>
+    const subscribeBtn = document.getElementById('subscribe-btn');
+    const unsubscribeBtn = document.getElementById('unsubscribe-btn');
+    const statusEl = document.getElementById('status');
+    const testSection = document.getElementById('test-section');
+
+    let swRegistration = null;
+    let currentSubscription = null;
+
+    function showStatus(msg, type = 'info') {
+      statusEl.innerHTML = `<div class="status ${type}">${msg}</div>`;
+    }
+
+    async function init() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showStatus('Push notifications not supported in this browser', 'error');
+        return;
+      }
+
+      try {
+        swRegistration = await navigator.serviceWorker.register('/sw.js');
+        currentSubscription = await swRegistration.pushManager.getSubscription();
+        updateUI();
+      } catch (err) {
+        showStatus('Failed to initialize: ' + err.message, 'error');
+      }
+    }
+
+    function updateUI() {
+      subscribeBtn.disabled = false;
+      if (currentSubscription) {
+        showStatus('Notifications enabled', 'success');
+        subscribeBtn.style.display = 'none';
+        unsubscribeBtn.style.display = 'inline-block';
+        testSection.style.display = 'block';
+      } else {
+        showStatus('Notifications disabled', 'info');
+        subscribeBtn.style.display = 'inline-block';
+        unsubscribeBtn.style.display = 'none';
+        testSection.style.display = 'none';
+      }
+    }
+
+    async function subscribe() {
+      try {
+        const res = await fetch('/vapid-public-key');
+        const { publicKey } = await res.json();
+
+        const subscription = await swRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+
+        await fetch('/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(subscription)
+        });
+
+        currentSubscription = subscription;
+        updateUI();
+      } catch (err) {
+        showStatus('Failed to subscribe: ' + err.message, 'error');
+      }
+    }
+
+    async function unsubscribe() {
+      try {
+        await fetch('/unsubscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: currentSubscription.endpoint })
+        });
+
+        await currentSubscription.unsubscribe();
+        currentSubscription = null;
+        updateUI();
+      } catch (err) {
+        showStatus('Failed to unsubscribe: ' + err.message, 'error');
+      }
+    }
+
+    async function sendTest() {
+      const title = document.getElementById('test-title').value;
+      const body = document.getElementById('test-body').value;
+
+      try {
+        const res = await fetch('/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, body })
+        });
+        const result = await res.json();
+        alert(`Sent: ${result.sent}, Failed: ${result.failed}`);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
+    }
+
+    subscribeBtn.addEventListener('click', subscribe);
+    unsubscribeBtn.addEventListener('click', unsubscribe);
+    document.getElementById('test-btn').addEventListener('click', sendTest);
+
+    init();
+  </script>
+</body>
+</html>

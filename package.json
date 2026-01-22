@@ -1,0 +1,22 @@
+{
+  "name": "claude-notify",
+  "version": "1.0.0",
+  "description": "WebPush notification microservice for Claude Code agents and hooks",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "generate-vapid": "node scripts/generate-vapid.js"
+  },
+  "keywords": [
+    "webpush",
+    "notifications",
+    "claude",
+    "microservice"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}
