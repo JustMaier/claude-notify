@@ -157,6 +157,12 @@ curl -X POST http://localhost:3939/notify \<br>
         subscribeBtn.style.display = 'none';
         unsubscribeBtn.style.display = 'inline-block';
         testSection.style.display = 'block';
+      } else if (Notification.permission === 'denied') {
+        showStatus('Notifications blocked by browser. Click the lock icon in the address bar to enable.', 'error');
+        subscribeBtn.disabled = true;
+        subscribeBtn.style.display = 'inline-block';
+        unsubscribeBtn.style.display = 'none';
+        testSection.style.display = 'none';
       } else {
         showStatus('Notifications disabled', 'info');
         subscribeBtn.style.display = 'inline-block';
@@ -167,6 +173,21 @@ curl -X POST http://localhost:3939/notify \<br>
 
     async function subscribe() {
       try {
+        // Check notification permission first
+        if (Notification.permission === 'denied') {
+          throw new Error('Notifications blocked. Please enable them in your browser settings for this site.');
+        }
+
+        // Request permission explicitly if not yet granted
+        if (Notification.permission === 'default') {
+          showStatus('Requesting notification permission...', 'info');
+          const permission = await Notification.requestPermission();
+          console.log('Permission result:', permission);
+          if (permission !== 'granted') {
+            throw new Error('Notification permission not granted');
+          }
+        }
+
         showStatus('Fetching VAPID key...', 'info');
         const res = await fetch('/vapid-public-key');
         const { publicKey } = await res.json();
@@ -176,7 +197,7 @@ curl -X POST http://localhost:3939/notify \<br>
           throw new Error('Service worker not registered');
         }
 
-        showStatus('Requesting permission...', 'info');
+        showStatus('Subscribing to push...', 'info');
         const subscription = await swRegistration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey)
