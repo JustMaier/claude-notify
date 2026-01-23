@@ -39,16 +39,45 @@ function loadVapidKeys() {
 const vapidKeys = loadVapidKeys();
 webpush.setVapidDetails('mailto:notifications@localhost', vapidKeys.publicKey, vapidKeys.privateKey);
 
-// Subscriptions
+// Subscriptions - new format: { endpoint: { subscription: {...}, tokens: [...] } }
 function loadSubscriptions() {
   if (existsSync(SUBSCRIPTIONS_FILE)) {
-    return JSON.parse(readFileSync(SUBSCRIPTIONS_FILE, 'utf8'));
+    const data = JSON.parse(readFileSync(SUBSCRIPTIONS_FILE, 'utf8'));
+
+    // Migrate old array format to new object format
+    if (Array.isArray(data)) {
+      console.log('Migrating subscriptions from array to object format...');
+      const migrated = {};
+      for (const sub of data) {
+        if (sub.endpoint) {
+          migrated[sub.endpoint] = {
+            subscription: sub,
+            tokens: [] // Legacy subscriptions start with empty tokens
+          };
+        }
+      }
+      saveSubscriptions(migrated);
+      console.log(`Migrated ${Object.keys(migrated).length} subscriptions`);
+      return migrated;
+    }
+
+    return data;
   }
-  return [];
+  return {};
 }
 
 function saveSubscriptions(subs) {
   writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(subs, null, 2));
+}
+
+function getSubscriptionsForToken(token) {
+  const results = [];
+  for (const [endpoint, entry] of Object.entries(subscriptions)) {
+    if (entry.tokens.includes(token)) {
+      results.push(entry.subscription);
+    }
+  }
+  return results;
 }
 
 let subscriptions = loadSubscriptions();
@@ -98,7 +127,7 @@ async function handleRequest(req, res) {
       version: packageJson.version,
       name: packageJson.name,
       uptime: process.uptime(),
-      subscriptions: subscriptions.length
+      subscriptions: Object.keys(subscriptions).length
     });
   }
 
@@ -108,30 +137,74 @@ async function handleRequest(req, res) {
 
   if (url === '/subscribe' && method === 'POST') {
     const body = await parseBody(req);
-    if (!body?.endpoint) {
-      return json(res, { error: 'Invalid subscription' }, 400);
+    const { token, subscription } = body;
+
+    // Support both new format { token, subscription } and legacy format { endpoint, keys }
+    const sub = subscription || body;
+    if (!sub?.endpoint) {
+      return json(res, { error: 'Invalid subscription: endpoint required' }, 400);
     }
-    if (!subscriptions.some(s => s.endpoint === body.endpoint)) {
-      subscriptions.push(body);
+    if (!token) {
+      return json(res, { error: 'Token is required' }, 400);
+    }
+
+    const endpoint = sub.endpoint;
+    if (subscriptions[endpoint]) {
+      // Endpoint exists - add token if not already present
+      if (!subscriptions[endpoint].tokens.includes(token)) {
+        subscriptions[endpoint].tokens.push(token);
+        saveSubscriptions(subscriptions);
+        console.log(`Token added to existing subscription. Endpoint has ${subscriptions[endpoint].tokens.length} tokens`);
+      }
+    } else {
+      // New endpoint - create entry
+      subscriptions[endpoint] = {
+        subscription: sub,
+        tokens: [token]
+      };
       saveSubscriptions(subscriptions);
-      console.log('New subscription added. Total:', subscriptions.length);
+      console.log('New subscription added. Total:', Object.keys(subscriptions).length);
     }
-    return json(res, { success: true, message: 'Subscribed successfully' });
+    return json(res, { success: true, message: 'Subscribed successfully', tokens: subscriptions[endpoint].tokens });
   }
 
   if (url === '/unsubscribe' && method === 'POST') {
-    const { endpoint } = await parseBody(req);
+    const { endpoint, token } = await parseBody(req);
     if (!endpoint) {
       return json(res, { error: 'Endpoint required' }, 400);
     }
-    const before = subscriptions.length;
-    subscriptions = subscriptions.filter(s => s.endpoint !== endpoint);
-    saveSubscriptions(subscriptions);
-    return json(res, { success: true, removed: before - subscriptions.length });
+
+    if (!subscriptions[endpoint]) {
+      return json(res, { success: true, removed: 0 });
+    }
+
+    if (token) {
+      // Remove specific token from endpoint
+      const before = subscriptions[endpoint].tokens.length;
+      subscriptions[endpoint].tokens = subscriptions[endpoint].tokens.filter(t => t !== token);
+      const removed = before - subscriptions[endpoint].tokens.length;
+
+      // If no tokens left, remove the entire endpoint
+      if (subscriptions[endpoint].tokens.length === 0) {
+        delete subscriptions[endpoint];
+        console.log('Endpoint removed (no tokens left)');
+      }
+
+      saveSubscriptions(subscriptions);
+      return json(res, { success: true, removed, tokens: subscriptions[endpoint]?.tokens || [] });
+    } else {
+      // Remove entire endpoint entry
+      delete subscriptions[endpoint];
+      saveSubscriptions(subscriptions);
+      return json(res, { success: true, removed: 1 });
+    }
   }
 
   if (url === '/notify' && method === 'POST') {
-    const { title, body, icon, url: notifyUrl, tag } = await parseBody(req);
+    const { token, title, body, icon, url: notifyUrl, tag } = await parseBody(req);
+    if (!token) {
+      return json(res, { error: 'Token is required' }, 400);
+    }
     if (!title) {
       return json(res, { error: 'Title is required' }, 400);
     }
@@ -145,10 +218,12 @@ async function handleRequest(req, res) {
       timestamp: Date.now()
     });
 
-    const results = { sent: 0, failed: 0, errors: [] };
+    // Get subscriptions for this token
+    const targetSubs = getSubscriptionsForToken(token);
+    const results = { sent: 0, failed: 0, errors: [], recipients: targetSubs.length };
     const invalidEndpoints = [];
 
-    for (const sub of subscriptions) {
+    for (const sub of targetSubs) {
       try {
         await webpush.sendNotification(sub, payload);
         results.sent++;
@@ -161,12 +236,30 @@ async function handleRequest(req, res) {
       }
     }
 
+    // Clean up invalid endpoints
     if (invalidEndpoints.length > 0) {
-      subscriptions = subscriptions.filter(s => !invalidEndpoints.includes(s.endpoint));
+      for (const endpoint of invalidEndpoints) {
+        delete subscriptions[endpoint];
+      }
       saveSubscriptions(subscriptions);
     }
 
     return json(res, results);
+  }
+
+  // GET /subscriptions/:endpoint - returns tokens for a given endpoint
+  if (url.startsWith('/subscriptions/') && method === 'GET') {
+    const endpoint = decodeURIComponent(url.slice('/subscriptions/'.length));
+    if (!endpoint) {
+      return json(res, { error: 'Endpoint required' }, 400);
+    }
+
+    const entry = subscriptions[endpoint];
+    if (!entry) {
+      return json(res, { tokens: [] });
+    }
+
+    return json(res, { tokens: entry.tokens });
   }
 
   // Static files
@@ -184,5 +277,5 @@ const server = createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`claude-notify v${packageJson.version} running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Subscriptions: ${subscriptions.length}`);
+  console.log(`Subscriptions: ${Object.keys(subscriptions).length}`);
 });

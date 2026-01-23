@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Notify</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
     * { box-sizing: border-box; }
     body {
@@ -40,6 +41,18 @@
       color: #888;
       cursor: not-allowed;
     }
+    button.secondary {
+      background: #333;
+      color: #eee;
+    }
+    button.small {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+    }
+    button.danger {
+      background: #8b3a3a;
+      color: #fff;
+    }
     .status {
       padding: 0.75rem;
       border-radius: 6px;
@@ -49,6 +62,7 @@
     .status.error { background: #4a1c1c; color: #ff9090; }
     .status.info { background: #1c3a4a; color: #90d0ff; }
     #test-section { display: none; }
+    #channels-section { display: none; }
     input, textarea {
       width: 100%;
       padding: 0.5rem;
@@ -68,6 +82,66 @@
       overflow-x: auto;
     }
     code { color: #d4a574; }
+
+    /* Token display */
+    .token-display {
+      background: #0f0f23;
+      padding: 1rem;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .token-value {
+      font-family: monospace;
+      font-size: 0.95rem;
+      color: #d4a574;
+      flex: 1;
+      word-break: break-all;
+    }
+    .token-hint {
+      color: #888;
+      font-size: 0.85rem;
+    }
+
+    /* Channel list */
+    .channel-list {
+      margin: 1rem 0;
+    }
+    .channel-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem;
+      background: #0f0f23;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+    }
+    .channel-token {
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: #90d0ff;
+    }
+    .channel-token.self {
+      color: #90ee90;
+    }
+    .channel-label {
+      color: #888;
+      font-size: 0.8rem;
+      margin-left: 0.5rem;
+    }
+
+    /* Subscribe form */
+    .subscribe-form {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .subscribe-form input {
+      flex: 1;
+      margin-bottom: 0;
+    }
 
     /* Permission banner styles */
     .permission-banner {
@@ -145,6 +219,23 @@
     body.banner-visible {
       padding-top: 5rem;
     }
+
+    .copied-tooltip {
+      position: fixed;
+      background: #1e4620;
+      color: #90ee90;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      animation: fadeInOut 1.5s ease;
+      pointer-events: none;
+    }
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(10px); }
+      20% { opacity: 1; transform: translateY(0); }
+      80% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-10px); }
+    }
   </style>
 </head>
 <body>
@@ -166,11 +257,32 @@
   <p class="subtitle">Push notifications for Claude Code agents and hooks</p>
 
   <div class="card">
-    <h3>Subscription Status</h3>
+    <h3>Your Token</h3>
+    <div class="token-display">
+      <span class="token-value" id="user-token">Loading...</span>
+      <button class="small secondary" id="copy-token-btn">Copy</button>
+    </div>
+    <p class="token-hint">Use this token in scripts to send notifications to yourself</p>
+  </div>
+
+  <div class="card">
+    <h3>Notification Status</h3>
     <div id="status">Checking...</div>
     <br>
     <button id="subscribe-btn" disabled>Enable Notifications</button>
-    <button id="unsubscribe-btn" style="display:none; background:#666;">Disable</button>
+    <button id="unsubscribe-btn" style="display:none; background:#666;">Disable All</button>
+  </div>
+
+  <div class="card" id="channels-section">
+    <h3>Subscribed Channels</h3>
+    <p style="color:#888; font-size:0.9rem;">You'll receive notifications sent to these tokens:</p>
+    <div class="channel-list" id="channel-list">
+      <p style="color:#666;">Loading...</p>
+    </div>
+    <div class="subscribe-form">
+      <input type="text" id="add-token-input" placeholder="Enter another token to subscribe...">
+      <button class="secondary" id="add-token-btn">Subscribe</button>
+    </div>
   </div>
 
   <div class="card" id="test-section">
@@ -180,7 +292,7 @@
     <label>Body</label>
     <textarea id="test-body" rows="2">This is a test notification!</textarea>
     <br>
-    <button id="test-btn">Send Test</button>
+    <button id="test-btn">Send to Your Token</button>
   </div>
 
   <div class="card">
@@ -190,9 +302,9 @@
 POST /notify<br>
 Content-Type: application/json<br><br>
 {<br>
+&nbsp;&nbsp;"token": "<span id="api-token-placeholder">YOUR_TOKEN</span>",<br>
 &nbsp;&nbsp;"title": "Claude Done",<br>
-&nbsp;&nbsp;"body": "Task completed successfully",<br>
-&nbsp;&nbsp;"url": "/"<br>
+&nbsp;&nbsp;"body": "Task completed successfully"<br>
 }
     </div>
     <br>
@@ -200,7 +312,7 @@ Content-Type: application/json<br><br>
     <div class="api-info">
 curl -X POST http://localhost:3939/notify \<br>
 &nbsp;&nbsp;-H "Content-Type: application/json" \<br>
-&nbsp;&nbsp;-d '{"title":"Claude","body":"Done!"}'
+&nbsp;&nbsp;-d '{"token":"<span id="curl-token-placeholder">YOUR_TOKEN</span>","title":"Claude","body":"Done!"}'
     </div>
   </div>
 
@@ -209,15 +321,170 @@ curl -X POST http://localhost:3939/notify \<br>
     const unsubscribeBtn = document.getElementById('unsubscribe-btn');
     const statusEl = document.getElementById('status');
     const testSection = document.getElementById('test-section');
+    const channelsSection = document.getElementById('channels-section');
+    const channelList = document.getElementById('channel-list');
+    const userTokenEl = document.getElementById('user-token');
+    const copyTokenBtn = document.getElementById('copy-token-btn');
+    const addTokenInput = document.getElementById('add-token-input');
+    const addTokenBtn = document.getElementById('add-token-btn');
 
     let swRegistration = null;
     let currentSubscription = null;
+    let userToken = null;
+    let subscribedTokens = [];
+
+    // Token management
+    function generateToken() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    function getOrCreateToken() {
+      let token = localStorage.getItem('notifyToken');
+      if (!token) {
+        token = generateToken();
+        localStorage.setItem('notifyToken', token);
+      }
+      return token;
+    }
+
+    function showCopiedTooltip(element) {
+      const rect = element.getBoundingClientRect();
+      const tooltip = document.createElement('div');
+      tooltip.className = 'copied-tooltip';
+      tooltip.textContent = 'Copied!';
+      tooltip.style.left = rect.left + 'px';
+      tooltip.style.top = (rect.top - 40) + 'px';
+      document.body.appendChild(tooltip);
+      setTimeout(() => tooltip.remove(), 1500);
+    }
+
+    async function copyToken() {
+      try {
+        await navigator.clipboard.writeText(userToken);
+        showCopiedTooltip(copyTokenBtn);
+      } catch (err) {
+        alert('Failed to copy: ' + err.message);
+      }
+    }
 
     function showStatus(msg, type = 'info') {
       statusEl.innerHTML = `<div class="status ${type}">${msg}</div>`;
     }
 
+    async function loadSubscribedTokens() {
+      if (!currentSubscription) {
+        subscribedTokens = [];
+        return;
+      }
+
+      try {
+        const res = await fetch('/subscriptions/' + encodeURIComponent(currentSubscription.endpoint));
+        const data = await res.json();
+        subscribedTokens = data.tokens || [];
+      } catch (err) {
+        console.error('Failed to load subscribed tokens:', err);
+        subscribedTokens = [];
+      }
+    }
+
+    function renderChannelList() {
+      if (subscribedTokens.length === 0) {
+        channelList.innerHTML = '<p style="color:#666;">No channels subscribed</p>';
+        return;
+      }
+
+      channelList.innerHTML = subscribedTokens.map(token => {
+        const isSelf = token === userToken;
+        return `
+          <div class="channel-item">
+            <div>
+              <span class="channel-token ${isSelf ? 'self' : ''}">${token}</span>
+              ${isSelf ? '<span class="channel-label">(you)</span>' : ''}
+            </div>
+            <button class="small danger" onclick="removeToken('${token}')">Remove</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function subscribeToToken(token) {
+      if (!currentSubscription) {
+        throw new Error('No active subscription');
+      }
+
+      const res = await fetch('/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          subscription: currentSubscription.toJSON()
+        })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || 'Failed to subscribe');
+      }
+
+      subscribedTokens = result.tokens || [];
+      renderChannelList();
+      return result;
+    }
+
+    async function removeToken(token) {
+      if (!currentSubscription) return;
+
+      try {
+        const res = await fetch('/unsubscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: currentSubscription.endpoint,
+            token
+          })
+        });
+
+        const result = await res.json();
+        subscribedTokens = result.tokens || [];
+        renderChannelList();
+
+        // If no tokens left, we're effectively unsubscribed
+        if (subscribedTokens.length === 0) {
+          await currentSubscription.unsubscribe();
+          currentSubscription = null;
+          updateUI();
+        }
+      } catch (err) {
+        alert('Failed to remove token: ' + err.message);
+      }
+    }
+
+    async function addToken() {
+      const token = addTokenInput.value.trim();
+      if (!token) {
+        alert('Please enter a token');
+        return;
+      }
+
+      try {
+        await subscribeToToken(token);
+        addTokenInput.value = '';
+      } catch (err) {
+        alert('Failed to subscribe: ' + err.message);
+      }
+    }
+
     async function init() {
+      // Initialize user token
+      userToken = getOrCreateToken();
+      userTokenEl.textContent = userToken;
+      document.getElementById('api-token-placeholder').textContent = userToken;
+      document.getElementById('curl-token-placeholder').textContent = userToken;
+
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         showStatus('Push notifications not supported in this browser', 'error');
         return;
@@ -228,12 +495,16 @@ curl -X POST http://localhost:3939/notify \<br>
         swRegistration = await navigator.serviceWorker.register('/sw.js');
         console.log('Service worker registered:', swRegistration.scope);
 
-        // Wait for the service worker to be ready
         await navigator.serviceWorker.ready;
         console.log('Service worker ready');
 
         currentSubscription = await swRegistration.pushManager.getSubscription();
         console.log('Existing subscription:', currentSubscription ? 'yes' : 'no');
+
+        if (currentSubscription) {
+          await loadSubscribedTokens();
+        }
+
         updateUI();
       } catch (err) {
         console.error('Init error:', err);
@@ -248,23 +519,26 @@ curl -X POST http://localhost:3939/notify \<br>
         subscribeBtn.style.display = 'none';
         unsubscribeBtn.style.display = 'inline-block';
         testSection.style.display = 'block';
+        channelsSection.style.display = 'block';
+        renderChannelList();
       } else if (Notification.permission === 'denied') {
         showStatus('Notifications blocked by browser. Click the lock icon in the address bar to enable.', 'error');
         subscribeBtn.disabled = true;
         subscribeBtn.style.display = 'inline-block';
         unsubscribeBtn.style.display = 'none';
         testSection.style.display = 'none';
+        channelsSection.style.display = 'none';
       } else {
         showStatus('Notifications disabled', 'info');
         subscribeBtn.style.display = 'inline-block';
         unsubscribeBtn.style.display = 'none';
         testSection.style.display = 'none';
+        channelsSection.style.display = 'none';
       }
     }
 
     async function subscribe() {
       try {
-        // Permission is already handled in click handler, but double-check
         if (Notification.permission !== 'granted') {
           throw new Error('Notification permission not granted. Please allow notifications for this site.');
         }
@@ -289,12 +563,20 @@ curl -X POST http://localhost:3939/notify \<br>
         const subRes = await fetch('/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(subscription)
+          body: JSON.stringify({
+            token: userToken,
+            subscription: subscription.toJSON()
+          })
         });
         const subResult = await subRes.json();
         console.log('Subscribe result:', subResult);
 
+        if (!subRes.ok) {
+          throw new Error(subResult.error || 'Failed to subscribe');
+        }
+
         currentSubscription = subscription;
+        subscribedTokens = subResult.tokens || [userToken];
         updateUI();
       } catch (err) {
         console.error('Subscribe error:', err);
@@ -312,6 +594,7 @@ curl -X POST http://localhost:3939/notify \<br>
 
         await currentSubscription.unsubscribe();
         currentSubscription = null;
+        subscribedTokens = [];
         updateUI();
       } catch (err) {
         showStatus('Failed to unsubscribe: ' + err.message, 'error');
@@ -326,10 +609,14 @@ curl -X POST http://localhost:3939/notify \<br>
         const res = await fetch('/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, body })
+          body: JSON.stringify({ token: userToken, title, body })
         });
         const result = await res.json();
-        alert(`Sent: ${result.sent}, Failed: ${result.failed}`);
+        if (!res.ok) {
+          alert('Error: ' + (result.error || 'Failed to send'));
+        } else {
+          alert(`Sent: ${result.sent}, Failed: ${result.failed}`);
+        }
       } catch (err) {
         alert('Error: ' + err.message);
       }
@@ -350,14 +637,13 @@ curl -X POST http://localhost:3939/notify \<br>
       permissionBanner.classList.add('visible');
       document.body.classList.add('banner-visible');
 
-      // Start watching for permission changes
       permissionCheckInterval = setInterval(() => {
         if (Notification.permission === 'granted') {
           hideBanner();
           subscribe();
         } else if (Notification.permission === 'denied') {
           hideBanner();
-          showStatus('Notifications blocked. Click the lock icon in address bar → Site settings → Notifications → Allow', 'error');
+          showStatus('Notifications blocked. Click the lock icon in address bar -> Site settings -> Notifications -> Allow', 'error');
         }
       }, 500);
     }
@@ -371,23 +657,18 @@ curl -X POST http://localhost:3939/notify \<br>
       }
     }
 
-    // When user clicks Enable, show banner and trigger browser prompt
     subscribeBtn.addEventListener('click', async () => {
       if (Notification.permission === 'granted') {
-        // Already have permission, just subscribe
         subscribe();
       } else if (Notification.permission === 'denied') {
-        showStatus('Notifications blocked. Click the lock icon in address bar → Site settings → Notifications → Allow', 'error');
+        showStatus('Notifications blocked. Click the lock icon in address bar -> Site settings -> Notifications -> Allow', 'error');
       } else {
-        // Show banner pointing to address bar
         showBanner();
 
-        // Trigger the browser permission request (shows bell icon in address bar)
         try {
           const result = await Notification.requestPermission();
           console.log('Permission result:', result);
 
-          // Permission resolved - banner will auto-hide via interval check
           if (result === 'granted') {
             hideBanner();
             subscribe();
@@ -398,11 +679,15 @@ curl -X POST http://localhost:3939/notify \<br>
       }
     });
 
-    // Dismiss banner manually
     document.getElementById('banner-dismiss').addEventListener('click', () => {
       hideBanner();
     });
 
+    copyTokenBtn.addEventListener('click', copyToken);
+    addTokenBtn.addEventListener('click', addToken);
+    addTokenInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addToken();
+    });
     unsubscribeBtn.addEventListener('click', unsubscribe);
     document.getElementById('test-btn').addEventListener('click', sendTest);
 
