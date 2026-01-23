@@ -83,28 +83,6 @@
     }
     code { color: #d4a574; }
 
-    /* Token display */
-    .token-display {
-      background: #0f0f23;
-      padding: 1rem;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 0.5rem;
-    }
-    .token-value {
-      font-family: monospace;
-      font-size: 0.95rem;
-      color: #d4a574;
-      flex: 1;
-      word-break: break-all;
-    }
-    .token-hint {
-      color: #888;
-      font-size: 0.85rem;
-    }
-
     /* Channel list */
     .channel-list {
       margin: 1rem 0;
@@ -118,10 +96,19 @@
       border-radius: 4px;
       margin-bottom: 0.5rem;
     }
+    .channel-item.primary {
+      background: #1a2a1a;
+      border: 1px solid #2a4a2a;
+    }
+    .channel-info {
+      flex: 1;
+      min-width: 0;
+    }
     .channel-token {
       font-family: monospace;
       font-size: 0.9rem;
       color: #90d0ff;
+      word-break: break-all;
     }
     .channel-token.self {
       color: #90ee90;
@@ -130,6 +117,17 @@
       color: #888;
       font-size: 0.8rem;
       margin-left: 0.5rem;
+    }
+    .channel-hint {
+      color: #666;
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+    }
+    .channel-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-left: 0.5rem;
+      flex-shrink: 0;
     }
 
     /* Subscribe form */
@@ -620,19 +618,23 @@ curl -X POST http://localhost:3939/notify \<br>
         if (!res.ok) {
           btn.textContent = 'Error!';
           btn.style.background = '#8b3a3a';
+          btn.style.color = '#fff';
         } else {
           btn.textContent = 'Sent!';
-          btn.style.background = '#3a8b3a';
+          btn.style.background = '#4a9a4a';
+          btn.style.color = '#fff';
         }
       } catch (err) {
         btn.textContent = 'Error!';
         btn.style.background = '#8b3a3a';
+        btn.style.color = '#fff';
       }
 
       setTimeout(() => {
         btn.disabled = false;
         btn.textContent = originalText;
         btn.style.background = '';
+        btn.style.color = '';
       }, 3000);
     }
 
