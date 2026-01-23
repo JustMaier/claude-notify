@@ -209,6 +209,23 @@ async function handleRequest(req, res) {
       return json(res, { error: 'Title is required' }, 400);
     }
 
+    // Web push payload limit is 4KB. Validate individual fields and total size.
+    const MAX_TITLE_BYTES = 200;
+    const MAX_BODY_BYTES = 2000;
+    const MAX_PAYLOAD_BYTES = 4000; // Safe margin below 4096
+
+    const titleBytes = Buffer.byteLength(title, 'utf8');
+    if (titleBytes > MAX_TITLE_BYTES) {
+      return json(res, { error: `Title exceeds ${MAX_TITLE_BYTES} bytes (got ${titleBytes})` }, 400);
+    }
+
+    if (body) {
+      const bodyBytes = Buffer.byteLength(body, 'utf8');
+      if (bodyBytes > MAX_BODY_BYTES) {
+        return json(res, { error: `Body exceeds ${MAX_BODY_BYTES} bytes (got ${bodyBytes})` }, 400);
+      }
+    }
+
     const payload = JSON.stringify({
       title,
       body: body || '',
@@ -217,6 +234,11 @@ async function handleRequest(req, res) {
       tag: tag || 'claude-notify',
       timestamp: Date.now()
     });
+
+    const payloadBytes = Buffer.byteLength(payload, 'utf8');
+    if (payloadBytes > MAX_PAYLOAD_BYTES) {
+      return json(res, { error: `Payload exceeds ${MAX_PAYLOAD_BYTES} bytes (got ${payloadBytes})` }, 400);
+    }
 
     // Get subscriptions for this token
     const targetSubs = getSubscriptionsForToken(token);

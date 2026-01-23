@@ -604,6 +604,11 @@ curl -X POST http://localhost:3939/notify \<br>
     async function sendTest() {
       const title = document.getElementById('test-title').value;
       const body = document.getElementById('test-body').value;
+      const btn = document.getElementById('test-btn');
+      const originalText = btn.textContent;
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
 
       try {
         const res = await fetch('/notify', {
@@ -613,13 +618,22 @@ curl -X POST http://localhost:3939/notify \<br>
         });
         const result = await res.json();
         if (!res.ok) {
-          alert('Error: ' + (result.error || 'Failed to send'));
+          btn.textContent = 'Error!';
+          btn.style.background = '#8b3a3a';
         } else {
-          alert(`Sent: ${result.sent}, Failed: ${result.failed}`);
+          btn.textContent = 'Sent!';
+          btn.style.background = '#3a8b3a';
         }
       } catch (err) {
-        alert('Error: ' + err.message);
+        btn.textContent = 'Error!';
+        btn.style.background = '#8b3a3a';
       }
+
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        btn.style.background = '';
+      }, 3000);
     }
 
     function urlBase64ToUint8Array(base64String) {
