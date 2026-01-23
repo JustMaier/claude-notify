@@ -62,7 +62,6 @@
     .status.error { background: #4a1c1c; color: #ff9090; }
     .status.info { background: #1c3a4a; color: #90d0ff; }
     #test-section { display: none; }
-    #channels-section { display: none; }
     input, textarea {
       width: 100%;
       padding: 0.5rem;
@@ -255,15 +254,6 @@
   <p class="subtitle">Push notifications for Claude Code agents and hooks</p>
 
   <div class="card">
-    <h3>Your Token</h3>
-    <div class="token-display">
-      <span class="token-value" id="user-token">Loading...</span>
-      <button class="small secondary" id="copy-token-btn">Copy</button>
-    </div>
-    <p class="token-hint">Use this token in scripts to send notifications to yourself</p>
-  </div>
-
-  <div class="card">
     <h3>Notification Status</h3>
     <div id="status">Checking...</div>
     <br>
@@ -272,14 +262,11 @@
   </div>
 
   <div class="card" id="channels-section">
-    <h3>Subscribed Channels</h3>
-    <p style="color:#888; font-size:0.9rem;">You'll receive notifications sent to these tokens:</p>
-    <div class="channel-list" id="channel-list">
-      <p style="color:#666;">Loading...</p>
-    </div>
-    <div class="subscribe-form">
-      <input type="text" id="add-token-input" placeholder="Enter another token to subscribe...">
-      <button class="secondary" id="add-token-btn">Subscribe</button>
+    <h3>Your Channels</h3>
+    <div class="channel-list" id="channel-list"></div>
+    <div class="subscribe-form" id="subscribe-form" style="display:none;">
+      <input type="text" id="add-token-input" placeholder="Subscribe to another token...">
+      <button class="secondary" id="add-token-btn">Add</button>
     </div>
   </div>
 
@@ -308,7 +295,7 @@ Content-Type: application/json<br><br>
     <br>
     <p><strong>curl example:</strong></p>
     <div class="api-info">
-curl -X POST http://localhost:3939/notify \<br>
+curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify \<br>
 &nbsp;&nbsp;-H "Content-Type: application/json" \<br>
 &nbsp;&nbsp;-d '{"token":"<span id="curl-token-placeholder">YOUR_TOKEN</span>","title":"Claude","body":"Done!"}'
     </div>
@@ -321,8 +308,7 @@ curl -X POST http://localhost:3939/notify \<br>
     const testSection = document.getElementById('test-section');
     const channelsSection = document.getElementById('channels-section');
     const channelList = document.getElementById('channel-list');
-    const userTokenEl = document.getElementById('user-token');
-    const copyTokenBtn = document.getElementById('copy-token-btn');
+    const subscribeForm = document.getElementById('subscribe-form');
     const addTokenInput = document.getElementById('add-token-input');
     const addTokenBtn = document.getElementById('add-token-btn');
 
@@ -360,10 +346,10 @@ curl -X POST http://localhost:3939/notify \<br>
       setTimeout(() => tooltip.remove(), 1500);
     }
 
-    async function copyToken() {
+    async function copyTokenValue(token, buttonElement) {
       try {
-        await navigator.clipboard.writeText(userToken);
-        showCopiedTooltip(copyTokenBtn);
+        await navigator.clipboard.writeText(token);
+        showCopiedTooltip(buttonElement);
       } catch (err) {
         alert('Failed to copy: ' + err.message);
       }
@@ -390,23 +376,40 @@ curl -X POST http://localhost:3939/notify \<br>
     }
 
     function renderChannelList() {
-      if (subscribedTokens.length === 0) {
-        channelList.innerHTML = '<p style="color:#666;">No channels subscribed</p>';
-        return;
-      }
+      const isSubscribed = currentSubscription !== null;
+      const otherTokens = subscribedTokens.filter(t => t !== userToken);
 
-      channelList.innerHTML = subscribedTokens.map(token => {
-        const isSelf = token === userToken;
-        return `
+      // Always show user's token first
+      let html = `
+        <div class="channel-item primary">
+          <div class="channel-info">
+            <span class="channel-token self">${userToken}</span>
+            <span class="channel-label">(your token)</span>
+            <div class="channel-hint">Use this in scripts to notify yourself</div>
+          </div>
+          <div class="channel-actions">
+            <button class="small secondary" onclick="copyTokenValue('${userToken}', this)">Copy</button>
+            ${isSubscribed && subscribedTokens.includes(userToken) ? `<button class="small danger" onclick="removeToken('${userToken}')">Remove</button>` : ''}
+          </div>
+        </div>
+      `;
+
+      // Show other subscribed tokens
+      for (const token of otherTokens) {
+        html += `
           <div class="channel-item">
-            <div>
-              <span class="channel-token ${isSelf ? 'self' : ''}">${token}</span>
-              ${isSelf ? '<span class="channel-label">(you)</span>' : ''}
+            <div class="channel-info">
+              <span class="channel-token">${token}</span>
             </div>
-            <button class="small danger" onclick="removeToken('${token}')">Remove</button>
+            <div class="channel-actions">
+              <button class="small secondary" onclick="copyTokenValue('${token}', this)">Copy</button>
+              <button class="small danger" onclick="removeToken('${token}')">Remove</button>
+            </div>
           </div>
         `;
-      }).join('');
+      }
+
+      channelList.innerHTML = html;
     }
 
     async function subscribeToToken(token) {
@@ -479,9 +482,13 @@ curl -X POST http://localhost:3939/notify \<br>
     async function init() {
       // Initialize user token
       userToken = getOrCreateToken();
-      userTokenEl.textContent = userToken;
       document.getElementById('api-token-placeholder').textContent = userToken;
       document.getElementById('curl-token-placeholder').textContent = userToken;
+      document.getElementById('curl-url-placeholder').textContent = window.location.origin;
+
+      // Always show channels section with user's token
+      channelsSection.style.display = 'block';
+      renderChannelList();
 
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         showStatus('Push notifications not supported in this browser', 'error');
@@ -512,26 +519,27 @@ curl -X POST http://localhost:3939/notify \<br>
 
     function updateUI() {
       subscribeBtn.disabled = false;
+      renderChannelList();
+
       if (currentSubscription) {
         showStatus('Notifications enabled', 'success');
         subscribeBtn.style.display = 'none';
         unsubscribeBtn.style.display = 'inline-block';
         testSection.style.display = 'block';
-        channelsSection.style.display = 'block';
-        renderChannelList();
+        subscribeForm.style.display = 'flex';
       } else if (Notification.permission === 'denied') {
         showStatus('Notifications blocked by browser. Click the lock icon in the address bar to enable.', 'error');
         subscribeBtn.disabled = true;
         subscribeBtn.style.display = 'inline-block';
         unsubscribeBtn.style.display = 'none';
         testSection.style.display = 'none';
-        channelsSection.style.display = 'none';
+        subscribeForm.style.display = 'none';
       } else {
         showStatus('Notifications disabled', 'info');
         subscribeBtn.style.display = 'inline-block';
         unsubscribeBtn.style.display = 'none';
         testSection.style.display = 'none';
-        channelsSection.style.display = 'none';
+        subscribeForm.style.display = 'none';
       }
     }
 
@@ -699,7 +707,6 @@ curl -X POST http://localhost:3939/notify \<br>
       hideBanner();
     });
 
-    copyTokenBtn.addEventListener('click', copyToken);
     addTokenBtn.addEventListener('click', addToken);
     addTokenInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') addToken();
