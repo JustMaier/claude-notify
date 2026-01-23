@@ -37,7 +37,9 @@ function loadVapidKeys() {
 }
 
 const vapidKeys = loadVapidKeys();
-webpush.setVapidDetails('mailto:notifications@localhost', vapidKeys.publicKey, vapidKeys.privateKey);
+// VAPID subject must be a real email or https URL - Apple rejects localhost
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:notify@justinmaier.com';
+webpush.setVapidDetails(VAPID_SUBJECT, vapidKeys.publicKey, vapidKeys.privateKey);
 
 // Subscriptions - new format: { endpoint: { subscription: {...}, tokens: [...] } }
 function loadSubscriptions() {
