@@ -39,7 +39,8 @@ function loadVapidKeys() {
 
 const vapidKeys = loadVapidKeys();
 // VAPID subject must be a real email or https URL - Apple rejects localhost
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:notify@justinmaier.com';
+// Set VAPID_SUBJECT env var to your email, e.g. mailto:you@example.com
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:notifications@example.com';
 webpush.setVapidDetails(VAPID_SUBJECT, vapidKeys.publicKey, vapidKeys.privateKey);
 
 // Subscriptions - new format: { endpoint: { subscription: {...}, tokens: [...] } }
