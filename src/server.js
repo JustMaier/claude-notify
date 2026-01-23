@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createServer } from 'http';
 import webpush from 'web-push';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
