@@ -149,15 +149,22 @@ async function handleRequest(req, res) {
     }
 
     const endpoint = sub.endpoint;
+    console.log(`Subscribe request: token="${token}", endpoint="${endpoint.substring(0, 50)}..."`);
+    console.log(`Existing endpoints: ${Object.keys(subscriptions).length}`);
+
     if (subscriptions[endpoint]) {
       // Endpoint exists - add token if not already present
+      console.log(`Found existing endpoint with tokens: ${JSON.stringify(subscriptions[endpoint].tokens)}`);
       if (!subscriptions[endpoint].tokens.includes(token)) {
         subscriptions[endpoint].tokens.push(token);
         saveSubscriptions(subscriptions);
-        console.log(`Token added to existing subscription. Endpoint has ${subscriptions[endpoint].tokens.length} tokens`);
+        console.log(`Token "${token}" added. Endpoint now has ${subscriptions[endpoint].tokens.length} tokens: ${JSON.stringify(subscriptions[endpoint].tokens)}`);
+      } else {
+        console.log(`Token "${token}" already exists for this endpoint`);
       }
     } else {
       // New endpoint - create entry
+      console.log(`Creating new endpoint entry for token "${token}"`);
       subscriptions[endpoint] = {
         subscription: sub,
         tokens: [token]
@@ -242,6 +249,14 @@ async function handleRequest(req, res) {
 
     // Get subscriptions for this token
     const targetSubs = getSubscriptionsForToken(token);
+    console.log(`Notify request: token="${token}", title="${title}"`);
+    console.log(`Found ${targetSubs.length} subscriptions for token "${token}"`);
+    if (targetSubs.length === 0) {
+      console.log(`All subscriptions and their tokens:`);
+      for (const [ep, entry] of Object.entries(subscriptions)) {
+        console.log(`  - ${ep.substring(0, 50)}... -> tokens: ${JSON.stringify(entry.tokens)}`);
+      }
+    }
     const results = { sent: 0, failed: 0, errors: [], recipients: targetSubs.length };
     const invalidEndpoints = [];
 

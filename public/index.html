@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Notify</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#d4a574">
   <style>
     * { box-sizing: border-box; }
     body {
@@ -62,7 +67,7 @@
     .status.error { background: #4a1c1c; color: #ff9090; }
     .status.info { background: #1c3a4a; color: #90d0ff; }
     #test-section { display: none; }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       padding: 0.5rem;
       border-radius: 4px;
@@ -70,6 +75,13 @@
       background: #0f0f23;
       color: #eee;
       margin-bottom: 0.5rem;
+    }
+    select {
+      cursor: pointer;
+    }
+    select option {
+      background: #0f0f23;
+      color: #eee;
     }
     label { display: block; margin-bottom: 0.25rem; color: #aaa; }
     .api-info {
@@ -272,12 +284,16 @@
 
   <div class="card" id="test-section">
     <h3>Test Notification</h3>
+    <label>Send to</label>
+    <select id="test-token">
+      <option value="">Loading...</option>
+    </select>
     <label>Title</label>
     <input type="text" id="test-title" value="Test from Claude">
     <label>Body</label>
     <textarea id="test-body" rows="2">This is a test notification!</textarea>
     <br>
-    <button id="test-btn">Send to Your Token</button>
+    <button id="test-btn">Send Test</button>
   </div>
 
   <div class="card">
@@ -311,11 +327,23 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
     const subscribeForm = document.getElementById('subscribe-form');
     const addTokenInput = document.getElementById('add-token-input');
     const addTokenBtn = document.getElementById('add-token-btn');
+    const testTokenSelect = document.getElementById('test-token');
 
     let swRegistration = null;
     let currentSubscription = null;
     let userToken = null;
     let subscribedTokens = [];
+
+    // Platform detection
+    function isIOS() {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    function isStandalone() {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
+    }
 
     // Token management
     function generateToken() {
@@ -410,6 +438,26 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
       }
 
       channelList.innerHTML = html;
+      updateTestTokenDropdown();
+    }
+
+    function updateTestTokenDropdown() {
+      const currentValue = testTokenSelect.value;
+
+      // Build options: user's token first, then other subscribed tokens
+      let options = `<option value="${userToken}">${userToken} (you)</option>`;
+      for (const token of subscribedTokens.filter(t => t !== userToken)) {
+        options += `<option value="${token}">${token}</option>`;
+      }
+
+      testTokenSelect.innerHTML = options;
+
+      // Restore selection if it still exists, otherwise default to user's token
+      if ([userToken, ...subscribedTokens].includes(currentValue)) {
+        testTokenSelect.value = currentValue;
+      } else {
+        testTokenSelect.value = userToken;
+      }
     }
 
     async function subscribeToToken(token) {
@@ -490,8 +538,24 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
       channelsSection.style.display = 'block';
       renderChannelList();
 
+      // Check for push notification support with iOS-specific guidance
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        showStatus('Push notifications not supported in this browser', 'error');
+        if (isIOS() && !isStandalone()) {
+          showStatus(
+            '<strong>Install this app for notifications</strong><br><br>' +
+            '1. Tap the <strong>Share</strong> button (box with arrow)<br>' +
+            '2. Scroll down and tap <strong>"Add to Home Screen"</strong><br>' +
+            '3. Open the app from your home screen<br>' +
+            '4. Come back here to enable notifications',
+            'info'
+          );
+          subscribeBtn.textContent = 'Install App First';
+          subscribeBtn.disabled = true;
+        } else if (isIOS() && isStandalone()) {
+          showStatus('Push notifications require iOS 16.4 or later. Please update your device.', 'error');
+        } else {
+          showStatus('Push notifications not supported in this browser', 'error');
+        }
         return;
       }
 
@@ -608,6 +672,7 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
     }
 
     async function sendTest() {
+      const token = testTokenSelect.value || userToken;
       const title = document.getElementById('test-title').value;
       const body = document.getElementById('test-body').value;
       const btn = document.getElementById('test-btn');
@@ -620,7 +685,7 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
         const res = await fetch('/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: userToken, title, body })
+          body: JSON.stringify({ token, title, body })
         });
         const result = await res.json();
         if (!res.ok) {
