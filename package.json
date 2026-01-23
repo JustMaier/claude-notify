@@ -1,6 +1,6 @@
 {
   "name": "claude-notify",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "WebPush notification microservice for Claude Code agents and hooks",
   "main": "src/server.js",
   "type": "module",
