@@ -141,6 +141,27 @@
       flex-shrink: 0;
     }
 
+    .channel-item.paused {
+      opacity: 0.5;
+    }
+    .channel-item.paused .channel-token {
+      color: #888;
+    }
+    .paused-label {
+      color: #d4a040;
+      font-size: 0.8rem;
+      margin-left: 0.5rem;
+      font-weight: 600;
+    }
+    button.pause {
+      background: #4a4a1a;
+      color: #d4d090;
+    }
+    button.resume {
+      background: #1a4a2a;
+      color: #90ee90;
+    }
+
     /* Subscribe form */
     .subscribe-form {
       display: flex;
@@ -333,6 +354,7 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
     let currentSubscription = null;
     let userToken = null;
     let subscribedTokens = [];
+    let pausedTokens = [];
 
     // Platform detection
     function isIOS() {
@@ -397,25 +419,32 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
         const res = await fetch('/subscriptions/' + encodeURIComponent(currentSubscription.endpoint));
         const data = await res.json();
         subscribedTokens = data.tokens || [];
+        pausedTokens = data.pausedTokens || [];
       } catch (err) {
         console.error('Failed to load subscribed tokens:', err);
         subscribedTokens = [];
+        pausedTokens = [];
       }
     }
 
     function renderChannelList() {
       const isSubscribed = currentSubscription !== null;
       const otherTokens = subscribedTokens.filter(t => t !== userToken);
+      const isUserTokenPaused = pausedTokens.includes(userToken);
 
       // Always show user's token first
       let html = `
-        <div class="channel-item primary">
+        <div class="channel-item primary${isUserTokenPaused ? ' paused' : ''}">
           <div class="channel-info">
             <span class="channel-token self">${userToken}</span>
             <span class="channel-label">(your token)</span>
+            ${isUserTokenPaused ? '<span class="paused-label">paused</span>' : ''}
             <div class="channel-hint">Use this in scripts to notify yourself</div>
           </div>
           <div class="channel-actions">
+            ${isSubscribed && subscribedTokens.includes(userToken) ? (isUserTokenPaused
+              ? `<button class="small resume" onclick="togglePauseToken('${userToken}')">Resume</button>`
+              : `<button class="small pause" onclick="togglePauseToken('${userToken}')">Pause</button>`) : ''}
             <button class="small secondary" onclick="copyTokenValue('${userToken}', this)">Copy</button>
             ${isSubscribed && subscribedTokens.includes(userToken) ? `<button class="small danger" onclick="removeToken('${userToken}')">Remove</button>` : ''}
           </div>
@@ -424,12 +453,17 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
 
       // Show other subscribed tokens
       for (const token of otherTokens) {
+        const isPaused = pausedTokens.includes(token);
         html += `
-          <div class="channel-item">
+          <div class="channel-item${isPaused ? ' paused' : ''}">
             <div class="channel-info">
               <span class="channel-token">${token}</span>
+              ${isPaused ? '<span class="paused-label">paused</span>' : ''}
             </div>
             <div class="channel-actions">
+              ${isPaused
+                ? `<button class="small resume" onclick="togglePauseToken('${token}')">Resume</button>`
+                : `<button class="small pause" onclick="togglePauseToken('${token}')">Pause</button>`}
               <button class="small secondary" onclick="copyTokenValue('${token}', this)">Copy</button>
               <button class="small danger" onclick="removeToken('${token}')">Remove</button>
             </div>
@@ -499,6 +533,7 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
 
         const result = await res.json();
         subscribedTokens = result.tokens || [];
+        pausedTokens = pausedTokens.filter(t => t !== token);
         renderChannelList();
 
         // If no tokens left, we're effectively unsubscribed
@@ -509,6 +544,33 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
         }
       } catch (err) {
         alert('Failed to remove token: ' + err.message);
+      }
+    }
+
+    async function togglePauseToken(token) {
+      if (!currentSubscription) return;
+
+      const isPaused = pausedTokens.includes(token);
+      try {
+        const res = await fetch('/subscriptions/pause', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: currentSubscription.endpoint,
+            token,
+            paused: !isPaused
+          })
+        });
+
+        const result = await res.json();
+        if (!res.ok) {
+          throw new Error(result.error || 'Failed to toggle pause');
+        }
+
+        pausedTokens = result.pausedTokens || [];
+        renderChannelList();
+      } catch (err) {
+        alert('Failed to toggle pause: ' + err.message);
       }
     }
 
@@ -665,6 +727,7 @@ curl -X POST <span id="curl-url-placeholder">http://localhost:3939</span>/notify
         await currentSubscription.unsubscribe();
         currentSubscription = null;
         subscribedTokens = [];
+        pausedTokens = [];
         updateUI();
       } catch (err) {
         showStatus('Failed to unsubscribe: ' + err.message, 'error');

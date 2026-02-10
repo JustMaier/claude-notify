@@ -77,7 +77,7 @@ function saveSubscriptions(subs) {
 function getSubscriptionsForToken(token) {
   const results = [];
   for (const [endpoint, entry] of Object.entries(subscriptions)) {
-    if (entry.tokens.includes(token)) {
+    if (entry.tokens.includes(token) && !entry.pausedTokens?.includes(token)) {
       results.push(entry.subscription);
     }
   }
@@ -193,6 +193,9 @@ async function handleRequest(req, res) {
       // Remove specific token from endpoint
       const before = subscriptions[endpoint].tokens.length;
       subscriptions[endpoint].tokens = subscriptions[endpoint].tokens.filter(t => t !== token);
+      if (subscriptions[endpoint].pausedTokens) {
+        subscriptions[endpoint].pausedTokens = subscriptions[endpoint].pausedTokens.filter(t => t !== token);
+      }
       const removed = before - subscriptions[endpoint].tokens.length;
 
       // If no tokens left, remove the entire endpoint
@@ -288,6 +291,37 @@ async function handleRequest(req, res) {
     return json(res, results);
   }
 
+  if (url === '/subscriptions/pause' && method === 'POST') {
+    const { endpoint, token, paused } = await parseBody(req);
+    if (!endpoint || !token) {
+      return json(res, { error: 'Endpoint and token are required' }, 400);
+    }
+
+    const entry = subscriptions[endpoint];
+    if (!entry) {
+      return json(res, { error: 'Subscription not found' }, 404);
+    }
+
+    if (!entry.tokens.includes(token)) {
+      return json(res, { error: 'Token not found in subscription' }, 404);
+    }
+
+    if (!entry.pausedTokens) {
+      entry.pausedTokens = [];
+    }
+
+    if (paused) {
+      if (!entry.pausedTokens.includes(token)) {
+        entry.pausedTokens.push(token);
+      }
+    } else {
+      entry.pausedTokens = entry.pausedTokens.filter(t => t !== token);
+    }
+
+    saveSubscriptions(subscriptions);
+    return json(res, { success: true, paused: !!paused, pausedTokens: entry.pausedTokens });
+  }
+
   // GET /subscriptions/:endpoint - returns tokens for a given endpoint
   if (url.startsWith('/subscriptions/') && method === 'GET') {
     const endpoint = decodeURIComponent(url.slice('/subscriptions/'.length));
@@ -297,10 +331,10 @@ async function handleRequest(req, res) {
 
     const entry = subscriptions[endpoint];
     if (!entry) {
-      return json(res, { tokens: [] });
+      return json(res, { tokens: [], pausedTokens: [] });
     }
 
-    return json(res, { tokens: entry.tokens });
+    return json(res, { tokens: entry.tokens, pausedTokens: entry.pausedTokens || [] });
   }
 
   // Static files
